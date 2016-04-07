@@ -13,11 +13,14 @@ import se.cygni.snake.api.model.SnakeDirection;
 import se.cygni.snake.api.response.PlayerRegistered;
 import se.cygni.snake.client.AnsiPrinter;
 import se.cygni.snake.client.BaseSnakeClient;
+import se.cygni.snake.client.MapCoordinate;
 import se.cygni.snake.client.MapUtil;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Random;
+import java.util.stream.Stream;
 
 public class SimpleSnakePlayer extends BaseSnakeClient {
 
@@ -27,9 +30,7 @@ public class SimpleSnakePlayer extends BaseSnakeClient {
     private AnsiPrinter ansiPrinter;
 
     public static void main(String[] args) {
-
         Runnable task = () -> {
-
             SimpleSnakePlayer sp = new SimpleSnakePlayer();
             sp.connect();
 
@@ -51,7 +52,7 @@ public class SimpleSnakePlayer extends BaseSnakeClient {
         thread.start();
     }
 
-    public SimpleSnakePlayer() {
+    private SimpleSnakePlayer() {
         ansiPrinter = new AnsiPrinter(true);
     }
 
@@ -61,27 +62,58 @@ public class SimpleSnakePlayer extends BaseSnakeClient {
 
         // MapUtil contains lot's of useful methods for querying the map!
         MapUtil mapUtil = new MapUtil(mapUpdateEvent.getMap(), getPlayerId());
+        List<SnakeDirection> directions;
 
-
-        List<SnakeDirection> directions = new ArrayList<>();
-
-        // Let's see in which directions I can move
-        for (SnakeDirection direction : SnakeDirection.values()) {
-            if (mapUtil.canIMoveInDirection(direction)) {
-                directions.add(direction);
+        Optional<MapCoordinate> mapCoordinate = shouldGoForFood(mapUtil);
+        Optional<SnakeDirection> chosenDirection;
+        if (mapCoordinate.isPresent()) {
+            directions = moveAgainstFood(mapCoordinate.get(), mapUtil);
+            chosenDirection = directions.stream().filter(mapUtil::canIMoveInDirection).findAny();
+            if (chosenDirection.isPresent()) {
+                registerMove(mapUpdateEvent.getGameTick(), chosenDirection.get());
             }
+        } else {
+            directions = new ArrayList<>();
+            // Let's see in which directions I can move
+            for (SnakeDirection direction : SnakeDirection.values()) {
+                if (mapUtil.canIMoveInDirection(direction)) {
+                    directions.add(direction);
+                }
+            }
+
+            Random r = new Random();
+            chosenDirection = Optional.of(SnakeDirection.DOWN);
+
+            // Choose a random direction
+            if (!directions.isEmpty()) {
+                chosenDirection = Optional.of(directions.get(r.nextInt(directions.size())));
+            }
+            // Register action here!
+
+            registerMove(mapUpdateEvent.getGameTick(), chosenDirection.get());
         }
-        Random r = new Random();
-        SnakeDirection chosenDirection = SnakeDirection.DOWN;
 
-        // Choose a random direction
-        if (!directions.isEmpty())
-            chosenDirection = directions.get(r.nextInt(directions.size()));
-
-        // Register action here!
-        registerMove(mapUpdateEvent.getGameTick(), chosenDirection);
     }
 
+    private List<SnakeDirection> moveAgainstFood(MapCoordinate mapCoordinate, MapUtil mapUtil) {
+        List<SnakeDirection> directions = new ArrayList<>();
+        if (mapCoordinate.x > mapUtil.getMyPosition().x) {
+            directions.add(SnakeDirection.RIGHT);
+        } else if (mapCoordinate.x < mapUtil.getMyPosition().x) {
+            directions.add(SnakeDirection.LEFT);
+        }
+        if (mapCoordinate.y > mapUtil.getMyPosition().y) {
+            directions.add(SnakeDirection.DOWN);
+        } else if (mapCoordinate.y < mapUtil.getMyPosition().y) {
+            directions.add(SnakeDirection.UP);
+        }
+        return directions;
+    }
+
+    private Optional<MapCoordinate> shouldGoForFood(MapUtil mapUtil) {
+        MapCoordinate myPosition = mapUtil.getMyPosition();
+        return Stream.of(mapUtil.listCoordinatesContainingFood()).reduce((mapCoordinate, mapCoordinate2) -> (mapCoordinate.getManhattanDistanceTo(myPosition) < mapCoordinate2.getManhattanDistanceTo(myPosition) ? mapCoordinate : mapCoordinate2));
+    }
 
 
     @Override
@@ -112,7 +144,7 @@ public class SimpleSnakePlayer extends BaseSnakeClient {
 
         // Disable this if you want to start the game manually from
         // the web GUI
-        startGame();
+//        startGame();
     }
 
     @Override
@@ -139,12 +171,12 @@ public class SimpleSnakePlayer extends BaseSnakeClient {
 
     @Override
     public String getServerHost() {
-        return "snake.cygni.se";
+        return "localhost";
     }
 
     @Override
     public int getServerPort() {
-        return 80;
+        return 8080;
     }
 
     @Override
